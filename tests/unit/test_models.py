@@ -100,6 +100,177 @@ class TestImageAsset:
         assert asset1 == asset2
         assert asset1 != asset3
 
+    def test_enhanced_properties(self) -> None:
+        """Test enhanced ImageAsset properties."""
+        asset = ImageAsset(
+            path=Path("test.jpg"),
+            format="JPEG",
+            size=(4000, 3000),
+            mode="RGB",
+        )
+
+        assert asset.megapixels == 12.0
+        assert asset.width == 4000
+        assert asset.height == 3000
+
+    def test_template_vars_basic(self) -> None:
+        """Test basic template variables."""
+        asset = ImageAsset(
+            path=Path("/photos/vacation_photo.jpg"),
+            format="JPEG",
+            size=(1920, 1080),
+            mode="RGB",
+            dpi=(300, 300),
+        )
+
+        vars_dict = asset.template_vars
+
+        # Basic properties
+        assert vars_dict["width"] == 1920
+        assert vars_dict["height"] == 1080
+        assert vars_dict["format"] == "JPEG"
+        assert vars_dict["format_lower"] == "jpeg"
+        assert vars_dict["mode"] == "RGB"
+
+        # File path components
+        assert vars_dict["filename"] == "vacation_photo"
+        assert vars_dict["basename"] == "vacation_photo.jpg"
+        assert vars_dict["extension"] == "jpg"
+        assert vars_dict["parent"] == "photos"
+
+        # Calculated values
+        assert vars_dict["aspect_ratio"] == pytest.approx(1.78, rel=1e-2)
+        assert vars_dict["megapixels"] == pytest.approx(2.1, rel=1e-1)
+        assert vars_dict["dpi_horizontal"] == 300
+        assert vars_dict["dpi_vertical"] == 300
+
+    def test_template_vars_with_exif(self) -> None:
+        """Test template variables with EXIF data."""
+        exif_data = {
+            "Make": "Canon",
+            "Model": "EOS R5",
+            "DateTime": "2025:01:01 12:00:00",
+            "FocalLength": (85, 1),
+            "FNumber": (28, 10),  # f/2.8
+            "ExposureTime": (1, 250),  # 1/250s
+            "ISOSpeedRatings": 800,
+        }
+
+        asset = ImageAsset(
+            path=Path("photo.jpg"),
+            format="JPEG",
+            size=(1920, 1080),
+            mode="RGB",
+            exif=exif_data,
+        )
+
+        vars_dict = asset.template_vars
+
+        assert vars_dict["camera_make"] == "Canon"
+        assert vars_dict["camera_model"] == "EOS R5"
+        assert vars_dict["date_taken"] == "2025:01:01 12:00:00"
+        assert vars_dict["focal_length"] == "85mm"
+        assert vars_dict["aperture"] == "f/2.8"
+        assert vars_dict["exposure_time"] == "1/250s"
+        assert vars_dict["iso"] == 800
+
+    def test_template_vars_with_iptc(self) -> None:
+        """Test template variables with IPTC data."""
+        iptc_data = {
+            "ObjectName": "Sunset Over Mountains",
+            "Caption-Abstract": "Beautiful sunset photograph",
+            "Keywords": ["sunset", "mountains", "landscape"],
+            "CopyrightNotice": "© 2025 Photographer",
+            "By-line": "John Doe",
+        }
+
+        asset = ImageAsset(
+            path=Path("photo.jpg"),
+            format="JPEG",
+            size=(1920, 1080),
+            mode="RGB",
+            iptc=iptc_data,
+        )
+
+        vars_dict = asset.template_vars
+
+        assert vars_dict["title"] == "Sunset Over Mountains"
+        assert vars_dict["description"] == "Beautiful sunset photograph"
+        assert vars_dict["keywords"] == "sunset, mountains, landscape"
+        assert vars_dict["copyright"] == "© 2025 Photographer"
+        assert vars_dict["creator"] == "John Doe"
+
+    def test_exif_formatting_helpers(self) -> None:
+        """Test EXIF data formatting helper methods."""
+        asset = ImageAsset(
+            path=Path("photo.jpg"),
+            format="JPEG",
+            size=(1920, 1080),
+            mode="RGB",
+        )
+
+        # Test focal length formatting
+        asset_with_focal = asset.with_exif_update({"FocalLength": (50, 1)})
+        assert asset_with_focal._get_exif_focal_length() == "50mm"
+
+        # Test aperture formatting
+        asset_with_aperture = asset.with_exif_update({"FNumber": (18, 10)})
+        assert asset_with_aperture._get_exif_aperture() == "f/1.8"
+
+        # Test exposure time formatting
+        asset_with_exposure = asset.with_exif_update({"ExposureTime": (1, 125)})
+        assert asset_with_exposure._get_exif_exposure_time() == "1/125s"
+
+    def test_metadata_updates(self) -> None:
+        """Test metadata update methods."""
+        asset = ImageAsset(
+            path=Path("photo.jpg"),
+            format="JPEG",
+            size=(1920, 1080),
+            mode="RGB",
+        )
+
+        # Test EXIF update
+        exif_data = {"Make": "Canon", "Model": "EOS R5"}
+        updated_asset = asset.with_exif_update(exif_data)
+        assert updated_asset.exif == exif_data
+        assert asset.exif == {}  # Original unchanged
+
+        # Test IPTC update
+        iptc_data = {"ObjectName": "Test Photo"}
+        updated_asset = asset.with_iptc_update(iptc_data)
+        assert updated_asset.iptc == iptc_data
+        assert asset.iptc == {}  # Original unchanged
+
+        # Test processing metadata update
+        processing_data = {"pipeline": "test_pipeline", "version": "1.0"}
+        updated_asset = asset.with_processing_update(processing_data)
+        assert updated_asset.processing_metadata == processing_data
+        assert asset.processing_metadata == {}  # Original unchanged
+
+    def test_original_path_tracking(self) -> None:
+        """Test original path tracking for processing chains."""
+        original_asset = ImageAsset(
+            path=Path("/original/photo.jpg"),
+            format="RAW",
+            size=(4000, 3000),
+            mode="RGB",
+        )
+
+        processed_asset = original_asset.with_updates(
+            path=Path("/processed/photo_processed.jpg"),
+            format="JPEG",
+            original_path=original_asset.path,
+        )
+
+        assert processed_asset.original_path == Path("/original/photo.jpg")
+        assert processed_asset.path == Path("/processed/photo_processed.jpg")
+
+        # Template vars should reflect original filename
+        vars_dict = processed_asset.template_vars
+        assert vars_dict["original_filename"] == "photo"
+        assert vars_dict["filename"] == "photo_processed"
+
 
 class TestActionParameter:
     """Test ActionParameter value object."""

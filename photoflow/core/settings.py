@@ -131,9 +131,9 @@ class FileSettingsLoader:
     def _convert_env_value(self, value: str) -> Any:
         """Convert environment variable string to appropriate type."""
         # Handle boolean values
-        if value.lower() in ("true", "yes", "1", "on"):
+        if value.lower() in {"true", "yes", "1", "on"}:
             return True
-        if value.lower() in ("false", "no", "0", "off"):
+        if value.lower() in {"false", "no", "0", "off"}:
             return False
 
         # Handle numeric values

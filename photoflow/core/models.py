@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import re  # used in _validate_constraints
 from dataclasses import field, replace
 from pathlib import Path
 from typing import Any, cast
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, TypeAdapter, field_validator
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 
 # Constants ---------------------------------------------------------------------
@@ -16,11 +17,11 @@ SIZE_TUPLE_LEN: int = 2  # Expected length of ImageAsset.size (width, height)
 
 @pydantic_dataclass(frozen=True)
 class ImageAsset:
-    """Immutable representation of an image with its metadata and processing state.
+    """Immutable representation of an image with rich metadata and processing context.
 
-    This is the core domain model representing an image throughout the processing
-    pipeline. It contains all necessary information about the image including its
-    location, format, dimensions, and metadata.
+    Enhanced domain model that provides comprehensive image information including
+    structured metadata, processing context, and template variables for dynamic
+    operations. This is the core model used throughout the PhotoFlow pipeline.
     """
 
     path: Path
@@ -35,8 +36,29 @@ class ImageAsset:
     mode: str
     """Color mode (RGB, RGBA, L, etc.)"""
 
+    # Enhanced metadata system (structured)
+    exif: dict[str, Any] = field(default_factory=dict)
+    """EXIF metadata from image headers"""
+
+    iptc: dict[str, Any] = field(default_factory=dict)
+    """IPTC metadata (keywords, copyright, etc.)"""
+
+    processing_metadata: dict[str, Any] = field(default_factory=dict)
+    """Processing history and PhotoFlow-specific metadata"""
+
+    # Processing context
+    dpi: tuple[int, int] = field(default=(72, 72))
+    """Image resolution in dots per inch (horizontal, vertical)"""
+
+    color_profile: str | None = field(default=None)
+    """ICC color profile name or identifier"""
+
+    original_path: Path | None = field(default=None)
+    """Path to original file (for tracking processing chains)"""
+
+    # Legacy metadata field (for backward compatibility)
     metadata: dict[str, Any] = field(default_factory=dict)
-    """EXIF, IPTC, and other metadata"""
+    """Legacy metadata field (deprecated, use exif/iptc instead)"""
 
     data: bytes | None = field(default=None, repr=False)
     """Raw image data (optional, for in-memory processing)"""
@@ -103,6 +125,187 @@ class ImageAsset:
             return self.path.stat().st_size / (1024 * 1024)
         return 0.0
 
+    @property
+    def megapixels(self) -> float:
+        """Image size in megapixels."""
+        return (self.width * self.height) / 1_000_000
+
+    @property
+    def template_vars(self) -> dict[str, Any]:
+        """Variables available for template evaluation.
+
+        Returns:
+            Dictionary of variables that can be used in template expressions
+            for file naming, parameter values, and other dynamic content.
+
+        Example:
+            Template: "<filename>_<width>x<height>"
+            With template_vars: {"filename": "photo", "width": 1920, "height": 1080}
+            Result: "photo_1920x1080"
+        """
+        # Basic image properties
+        vars_dict = {
+            # Dimensions
+            "width": self.width,
+            "height": self.height,
+            "aspect_ratio": round(self.aspect_ratio, 2),
+            "megapixels": round(self.megapixels, 1),
+            # Format and mode
+            "format": self.format,
+            "format_lower": self.format.lower(),
+            "mode": self.mode,
+            # File path components
+            "filename": self.path.stem,
+            "basename": self.path.name,
+            "extension": self.path.suffix.lstrip("."),
+            "parent": self.path.parent.name,
+            "parent_path": str(self.path.parent),
+            # File properties
+            "file_size_mb": round(self.file_size_mb, 2),
+            "dpi_horizontal": self.dpi[0],
+            "dpi_vertical": self.dpi[1],
+            # Processing context
+            "color_profile": self.color_profile or "",
+            "original_filename": (
+                self.original_path.stem if self.original_path else self.path.stem
+            ),
+        }
+
+        # Add EXIF-derived variables
+        if self.exif:
+            vars_dict.update(
+                {
+                    "date_taken": self._get_exif_date(),
+                    "camera_make": self.exif.get("Make", ""),
+                    "camera_model": self.exif.get("Model", ""),
+                    "lens_model": self.exif.get("LensModel", ""),
+                    "focal_length": self._get_exif_focal_length(),
+                    "aperture": self._get_exif_aperture(),
+                    "iso": self.exif.get("ISOSpeedRatings", ""),
+                    "exposure_time": self._get_exif_exposure_time(),
+                }
+            )
+
+        # Add IPTC-derived variables
+        if self.iptc:
+            vars_dict.update(
+                {
+                    "title": self.iptc.get("ObjectName", ""),
+                    "description": self.iptc.get("Caption-Abstract", ""),
+                    "keywords": ", ".join(self.iptc.get("Keywords", [])),
+                    "copyright": self.iptc.get("CopyrightNotice", ""),
+                    "creator": self.iptc.get("By-line", ""),
+                }
+            )
+
+        # Add processing metadata
+        if self.processing_metadata:
+            vars_dict.update(
+                {
+                    "processing_date": self.processing_metadata.get(
+                        "processed_date", ""
+                    ),
+                    "pipeline_name": self.processing_metadata.get("pipeline", ""),
+                    "processing_version": self.processing_metadata.get("version", ""),
+                }
+            )
+
+        return vars_dict
+
+    def _get_exif_date(self) -> str:
+        """Extract formatted date from EXIF data."""
+        date_fields = ["DateTime", "DateTimeOriginal", "DateTimeDigitized"]
+        for date_field in date_fields:
+            if self.exif.get(date_field):
+                return str(self.exif[date_field])
+        return ""
+
+    def _get_exif_focal_length(self) -> str:
+        """Extract formatted focal length from EXIF data."""
+        focal_length = self.exif.get("FocalLength")
+        if focal_length:
+            try:
+                # Handle fractional values
+                if (
+                    isinstance(focal_length, tuple)
+                    and len(focal_length) == 2  # noqa: PLR2004
+                ):
+                    return f"{focal_length[0] / focal_length[1]:.0f}mm"
+                else:
+                    return f"{float(focal_length):.0f}mm"
+            except (ValueError, TypeError, ZeroDivisionError):
+                return str(focal_length)
+        return ""
+
+    def _get_exif_aperture(self) -> str:
+        """Extract formatted aperture from EXIF data."""
+        aperture = self.exif.get("FNumber") or self.exif.get("ApertureValue")
+        if aperture:
+            try:
+                if isinstance(aperture, tuple) and len(aperture) == 2:  # noqa: PLR2004
+                    f_value = aperture[0] / aperture[1]
+                else:
+                    f_value = float(aperture)
+                return f"f/{f_value:.1f}"
+            except (ValueError, TypeError, ZeroDivisionError):
+                return str(aperture)
+        return ""
+
+    def _get_exif_exposure_time(self) -> str:
+        """Extract formatted exposure time from EXIF data."""
+        exposure = self.exif.get("ExposureTime")
+        if exposure:
+            try:
+                if isinstance(exposure, tuple) and len(exposure) == 2:  # noqa: PLR2004
+                    if exposure[0] == 1:
+                        return f"1/{exposure[1]}s"
+                    else:
+                        return f"{exposure[0] / exposure[1]:.2f}s"
+                else:
+                    return f"{float(exposure):.2f}s"
+            except (ValueError, TypeError, ZeroDivisionError):
+                return str(exposure)
+        return ""
+
+    def with_exif_update(self, exif_data: dict[str, Any]) -> ImageAsset:
+        """Create new ImageAsset with updated EXIF data.
+
+        Args:
+            exif_data: EXIF data to merge with existing data
+
+        Returns:
+            New ImageAsset with updated EXIF metadata
+        """
+        new_exif = self.exif.copy()
+        new_exif.update(exif_data)
+        return replace(self, exif=new_exif)
+
+    def with_iptc_update(self, iptc_data: dict[str, Any]) -> ImageAsset:
+        """Create new ImageAsset with updated IPTC data.
+
+        Args:
+            iptc_data: IPTC data to merge with existing data
+
+        Returns:
+            New ImageAsset with updated IPTC metadata
+        """
+        new_iptc = self.iptc.copy()
+        new_iptc.update(iptc_data)
+        return replace(self, iptc=new_iptc)
+
+    def with_processing_update(self, processing_data: dict[str, Any]) -> ImageAsset:
+        """Create new ImageAsset with updated processing metadata.
+
+        Args:
+            processing_data: Processing metadata to merge
+
+        Returns:
+            New ImageAsset with updated processing metadata
+        """
+        new_processing = self.processing_metadata.copy()
+        new_processing.update(processing_data)
+        return replace(self, processing_metadata=new_processing)
+
 
 class ActionParameter(BaseModel):
     """Value object for action parameters with validation and defaults.
@@ -166,7 +369,7 @@ class ActionParameter(BaseModel):
 
             elif self.param_type == "bool" and not isinstance(self.value, bool):
                 if isinstance(self.value, str):
-                    self.value = self.value.lower() in ("true", "yes", "1", "on")
+                    self.value = self.value.lower() in {"true", "yes", "1", "on"}
                 else:
                     self.value = bool(self.value)
 
@@ -202,13 +405,12 @@ class ActionParameter(BaseModel):
                 f"Parameter '{self.name}' must be one of {self.constraints['choices']}"
             )
 
-        if "pattern" in self.constraints and isinstance(self.value, str):
-            import re
-
-            if not re.match(self.constraints["pattern"], self.value):
-                raise ValueError(
-                    f"Parameter '{self.name}' doesn't match required pattern"
-                )
+        if (
+            "pattern" in self.constraints
+            and isinstance(self.value, str)
+            and not re.match(self.constraints["pattern"], self.value)
+        ):
+            raise ValueError(f"Parameter '{self.name}' doesn't match required pattern")
 
 
 @pydantic_dataclass(frozen=True)
@@ -292,8 +494,7 @@ class Pipeline:
             raise ValueError("Pipeline name cannot be empty")
 
         # Ensure actions is a tuple (for immutability)
-        if not isinstance(self.actions, tuple):
-            object.__setattr__(self, "actions", tuple(self.actions))  # type: ignore[unreachable]
+        object.__setattr__(self, "actions", tuple(self.actions))
 
     def with_action(self, action: ActionSpec, index: int | None = None) -> Pipeline:
         """Create new Pipeline with action added.
@@ -367,13 +568,9 @@ class Pipeline:
 
     def model_dump(self) -> dict[str, Any]:
         """Return a JSON-serialisable dict representation."""
-        from pydantic import TypeAdapter  # local import to avoid startup cost
-
-        return cast(dict[str, Any], TypeAdapter(Pipeline).dump_python(self))
+        return cast("dict[str, Any]", TypeAdapter(Pipeline).dump_python(self))
 
     @classmethod
     def model_validate(cls, data: dict[str, Any]) -> Pipeline:
         """Validate and construct a Pipeline from raw data."""
-        from pydantic import TypeAdapter
-
         return TypeAdapter(cls).validate_python(data)

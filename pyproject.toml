@@ -149,7 +149,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["ARG001", "S101", "PLR2004"]
+"tests/*" = ["ARG001", "ARG002", "S101", "PLR2004", "RUF100"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10
@@ -197,3 +197,7 @@ exclude_lines = [
     "class .*\\bProtocol\\):",
     "@(abc\\.)?abstractmethod",
 ]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
