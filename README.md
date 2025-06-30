@@ -67,32 +67,41 @@ photoflow gui
 
 ### Action Lists
 
-Create reusable `.actions` files for consistent processing:
+Create reusable `.actions` files (JSON format) for consistent processing:
 
-```yaml
-# resize_web.actions
-- action: resize
-  width: 1920
-  height: 1080
-  maintain_aspect: true
-
-- action: watermark
-  text: "© 2025 Your Company"
-  position: bottom_right
-  opacity: 0.7
-
-- action: save
-  format: webp
-  quality: 85
+```json
+[
+  {
+    "action": "resize",
+    "width": 1920,
+    "height": 1080,
+    "maintain_aspect": true
+  },
+  {
+    "action": "watermark",
+    "text": "© 2025 Your Company",
+    "position": "bottom_right",
+    "opacity": 0.7
+  },
+  {
+    "action": "save",
+    "format": "webp",
+    "quality": 85
+  }
+]
 ```
 
 ## Architecture
 
-PhotoFlow is built on SOLID principles with a modular, extensible architecture:
+PhotoFlow is built on SOLID principles with a modular, extensible architecture enhanced by proven patterns from mature image processing tools:
 
 - **Protocol-Based Design**: All components implement clear interfaces
 - **Dependency Injection**: Fully testable and configurable
-- **Plugin System**: Easy extension without core modifications
+- **Form-Field Architecture**: Specialized parameter types with built-in validation
+- **Template Expression System**: Safe dynamic evaluation for file naming and parameters
+- **Rich Metadata Context**: Structured EXIF/IPTC data with template variables
+- **Dynamic Field Relevance**: Contextual UIs showing only relevant parameters
+- **Processing Mixins**: Reusable operation patterns for common tasks
 - **Immutable Models**: Predictable data flow and processing
 
 ## Configuration
@@ -164,11 +173,14 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## Status
 
-🚧 **In Development** - Phase 1.1 Complete
+🚧 **In Development** - Phase 1.2 Complete
 
 - ✅ Core architecture and foundation
 - ✅ Settings and configuration system
 - ✅ Testing framework and quality assurance
-- 🔄 Domain models and basic actions (Phase 1.2)
-- 📋 CLI and batch processing (Phase 2)
-- 📋 GUI and visual editor (Phase 4+)
+- ✅ Immutable domain models with comprehensive validation
+- ✅ JSON/YAML serialization system
+- 🔄 **Next**: Field-based parameter system and template evaluation (Phase 1.3)
+- 📋 Form-based action system (Phase 1.4)
+- 📋 CLI with rich output and validation (Phase 2)
+- 📋 GUI with dynamic forms (Phase 4+)

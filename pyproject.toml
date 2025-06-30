@@ -172,6 +172,7 @@ exclude = [
     "dev-doc/",
     "build/",
     "dist/",
+    "tests/",
 ]
 
 [tool.coverage.run]
