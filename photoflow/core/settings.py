@@ -29,12 +29,8 @@ class PhotoFlowSettings(BaseModel):
     max_workers: int = Field(default=4, ge=1, le=32)
     chunk_size: int = Field(default=100, ge=1)
     temp_dir: Path = Field(default_factory=lambda: Path.cwd() / "temp")
-    cache_dir: Path = Field(
-        default_factory=lambda: Path.home() / ".photoflow" / "cache"
-    )
-    log_level: str = Field(
-        default="INFO", pattern=r"^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$"
-    )
+    cache_dir: Path = Field(default_factory=lambda: Path.home() / ".photoflow" / "cache")
+    log_level: str = Field(default="INFO", pattern=r"^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
 
     # Image processing
     default_quality: int = Field(default=95, ge=1, le=100)

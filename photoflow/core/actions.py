@@ -10,10 +10,19 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from .fields import BaseField, ValidationError
+
 if TYPE_CHECKING:
     from .models import ImageAsset
 
-from .fields import BaseField, ValidationError
+# Check if metadata actions are available
+try:
+    # This import will succeed if the metadata actions module loads correctly
+    from ..actions import metadata as _metadata_actions  # noqa: F401
+
+    METADATA_ACTIONS_AVAILABLE = True
+except ImportError:
+    METADATA_ACTIONS_AVAILABLE = False
 
 
 class ActionError(Exception):
@@ -30,11 +39,9 @@ class ActionError(Exception):
         self.action_name = action_name
         self.message = message
         self.suggestion = suggestion
-
         full_message = f"Action '{action_name}' failed: {message}"
         if suggestion:
             full_message += f"\nSuggestion: {suggestion}"
-
         super().__init__(full_message)
 
 
@@ -46,22 +53,16 @@ class BaseAction(ABC):
     actions inherit from this class.
     """
 
-    # Action metadata (should be overridden in subclasses)
     name: str = ""
     """Action identifier (snake_case)"""
-
     label: str = ""
     """Human-readable action name"""
-
     description: str = ""
     """Detailed description of what the action does"""
-
     version: str = "1.0"
     """Action version for compatibility tracking"""
-
     author: str = ""
     """Action author/creator"""
-
     tags: ClassVar[list[str]] = []
     """Tags for categorization and search"""
 
@@ -69,8 +70,6 @@ class BaseAction(ABC):
         """Initialize action with field definitions."""
         self.fields: dict[str, BaseField] = {}
         self.setup_fields()
-
-        # Validate that required metadata is provided
         if not self.name:
             raise ValueError(f"Action {self.__class__.__name__} must define 'name'")
         if not self.label:
@@ -156,19 +155,15 @@ class BaseAction(ABC):
         """
         validated_params = {}
         relevant_fields = self.get_relevant_fields(params)
-
         for field_name in relevant_fields:
             if field_name not in self.fields:
                 continue
-
             field = self.fields[field_name]
             raw_value = params.get(field_name)
-
             try:
                 validated_value = field.validate(raw_value)
                 validated_params[field_name] = validated_value
             except ValidationError as e:
-                # Re-raise with action context
                 raise ValidationError(
                     field_name=f"{self.name}.{field_name}",
                     expected=e.expected,
@@ -176,7 +171,6 @@ class BaseAction(ABC):
                     message=f"In action '{self.label}': {e.message}",
                     suggestion=e.suggestion,
                 ) from e
-
         return validated_params
 
     def get_field_schema(self) -> dict[str, dict[str, Any]]:
@@ -208,8 +202,6 @@ class BaseAction(ABC):
                 "default": field.default,
                 "required": field.required,
             }
-
-            # Add field-specific attributes
             if hasattr(field, "min_value"):
                 field_schema["min_value"] = field.min_value
             if hasattr(field, "max_value"):
@@ -220,9 +212,7 @@ class BaseAction(ABC):
                 field_schema["max_length"] = field.max_length
             if hasattr(field, "choices"):
                 field_schema["choices"] = field.choices
-
             schema[field_name] = field_schema
-
         return schema
 
     def execute(self, image: ImageAsset, **params: Any) -> ImageAsset:
@@ -242,21 +232,14 @@ class BaseAction(ABC):
             ActionError: If validation or processing fails
         """
         try:
-            # Validate parameters
             validated_params = self.validate_params(params)
-
-            # Apply the action
             result_image = self.apply(image, **validated_params)
-
-            # Update processing metadata
             processing_update = {
                 "last_action": self.name,
                 "last_action_version": self.version,
                 "last_action_params": validated_params,
             }
-
             return result_image.with_processing_update(processing_update)
-
         except ValidationError as e:
             raise ActionError(
                 action_name=self.name,
@@ -293,9 +276,7 @@ class BaseAction(ABC):
 
     def __repr__(self) -> str:
         """Developer representation of the action."""
-        return (
-            f"{self.__class__.__name__}(name='{self.name}', version='{self.version}')"
-        )
+        return f"{self.__class__.__name__}(name='{self.name}', version='{self.version}')"
 
 
 class ActionRegistry:
@@ -318,20 +299,14 @@ class ActionRegistry:
         Raises:
             ValueError: If action name conflicts or is invalid
         """
-        # Create temporary instance to get name
         temp_instance = action_class()
         name = temp_instance.name
-
         if not name:
             raise ValueError(f"Action {action_class.__name__} has no name")
-
         if name in self._actions:
             existing_class = self._actions[name]
             if existing_class != action_class:
-                raise ValueError(
-                    f"Action name '{name}' already registered by {existing_class.__name__}"
-                )
-
+                raise ValueError(f"Action name '{name}' already registered by {existing_class.__name__}")
         self._actions[name] = action_class
 
     def unregister(self, name: str) -> None:
@@ -357,7 +332,6 @@ class ActionRegistry:
         if name not in self._actions:
             available = ", ".join(sorted(self._actions.keys()))
             raise KeyError(f"Action '{name}' not found. Available actions: {available}")
-
         action_class = self._actions[name]
         return action_class()
 
@@ -413,8 +387,30 @@ class ActionRegistry:
         return name in self._actions
 
 
-# Global action registry instance
 default_registry = ActionRegistry()
+
+
+def _register_metadata_actions() -> None:
+    """Register metadata actions with the default registry."""
+    if METADATA_ACTIONS_AVAILABLE:
+        # Import here to avoid circular imports
+        try:
+            from ..actions.metadata import (
+                CopyMetadataAction,
+                ExtractMetadataAction,
+                RemoveMetadataAction,
+                WriteMetadataAction,
+            )
+
+            default_registry.register(WriteMetadataAction)
+            default_registry.register(RemoveMetadataAction)
+            default_registry.register(CopyMetadataAction)
+            default_registry.register(ExtractMetadataAction)
+        except ImportError:
+            pass
+
+
+_register_metadata_actions()
 
 
 def register_action(action_class: type[BaseAction]) -> None:

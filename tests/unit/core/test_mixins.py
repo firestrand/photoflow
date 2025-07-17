@@ -54,9 +54,7 @@ class TestGeometryMixin:
 
     def test_calculate_scaled_size_no_targets(self) -> None:
         """Test error when no target dimensions provided."""
-        with pytest.raises(
-            ValueError, match="Must specify at least one target dimension"
-        ):
+        with pytest.raises(ValueError, match="Must specify at least one target dimension"):
             self.mixin.calculate_scaled_size((1920, 1080))
 
     def test_validate_dimensions_valid(self) -> None:
@@ -441,9 +439,7 @@ class TestMixinIntegration:
                 opacity_percent = self.validate_percentage(opacity)
 
                 # Calculate new size
-                new_size = self.calculate_scaled_size(
-                    original_size, target_width=800, maintain_aspect=True
-                )
+                new_size = self.calculate_scaled_size(original_size, target_width=800, maintain_aspect=True)
 
                 return {
                     "original_size": original_size,
@@ -497,3 +493,95 @@ class TestMixinIntegration:
             assert error.field_name
             assert error.message
             assert error.suggestion  # All should have suggestions
+
+
+class TestMixinsMissingLineCoverage:
+    """Test specific missing lines for coverage in mixins."""
+
+    def test_geometry_mixin_no_dimensions_line_75(self) -> None:
+        """Test GeometryMixin when no target dimensions provided (line 75)."""
+        mixin = GeometryMixin()
+
+        # When no target width or height provided, should raise ValueError
+        with pytest.raises(ValueError, match="Must specify at least one target dimension"):
+            mixin.calculate_scaled_size(original_size=(1920, 1080), maintain_aspect=True)
+
+    def test_geometry_mixin_negative_crop_x_line_160(self) -> None:
+        """Test GeometryMixin negative crop X validation (line 160)."""
+        mixin = GeometryMixin()
+
+        with pytest.raises(ValidationError) as exc_info:
+            mixin.calculate_crop_bounds(
+                image_size=(1920, 1080),
+                crop_x=-10,
+                crop_y=0,
+                crop_width=100,
+                crop_height=100,
+            )
+
+        assert "Crop X position cannot be negative" in str(exc_info.value)
+        assert exc_info.value.field_name == "crop_x"
+
+    def test_geometry_mixin_negative_crop_y_line_179(self) -> None:
+        """Test GeometryMixin negative crop Y validation (line 179)."""
+        mixin = GeometryMixin()
+
+        # Find line 179 - should be crop_y validation error
+        with pytest.raises(ValidationError) as exc_info:
+            mixin.calculate_crop_bounds(
+                image_size=(1920, 1080),
+                crop_x=0,
+                crop_y=-5,
+                crop_width=100,
+                crop_height=100,
+            )
+
+        assert "Crop Y position cannot be negative" in str(exc_info.value)
+        assert exc_info.value.field_name == "crop_y"
+
+    def test_geometry_mixin_edge_case_line_198(self) -> None:
+        """Test GeometryMixin edge case validation (line 198)."""
+        mixin = GeometryMixin()
+
+        # Test edge case that triggers line 198
+        # This might be crop width/height validation
+        with pytest.raises(ValidationError):
+            mixin.calculate_crop_bounds(
+                image_size=(1920, 1080),
+                crop_x=0,
+                crop_y=0,
+                crop_width=0,  # Invalid crop width
+                crop_height=50,
+            )
+
+    def test_color_mixin_line_341(self) -> None:
+        """Test ColorMixin validation line 341."""
+        mixin = ProcessingMixin()
+
+        # Test invalid factor
+        with pytest.raises(ValidationError):
+            mixin.validate_factor(-0.5)  # Negative factor should be invalid
+
+    def test_color_mixin_line_354(self) -> None:
+        """Test ColorMixin validation line 354."""
+        mixin = ProcessingMixin()
+
+        # Test invalid percentage
+        with pytest.raises(ValidationError):
+            mixin.validate_percentage(-10)  # Negative percentage should be invalid
+
+    def test_processing_mixin_line_451(self) -> None:
+        """Test ProcessingMixin validation line 451."""
+        mixin = ColorMixin()
+
+        # Test invalid color value
+        with pytest.raises(ValidationError):
+            mixin.validate_color_value(300, "RGB")  # Value > 255 should be invalid
+
+    def test_processing_mixin_line_455(self) -> None:
+        """Test ProcessingMixin validation line 455."""
+        mixin = ColorMixin()
+
+        # Test invalid color mode
+        with pytest.raises(ValidationError):
+            mixin.validate_color_mode("INVALID_MODE")  # Invalid mode should raise error

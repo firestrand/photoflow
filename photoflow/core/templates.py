@@ -135,9 +135,7 @@ class TemplateEvaluator:
                 suggestion=suggestion,
             ) from e
 
-    def _substitute_variables_and_expressions(
-        self, template: str, context: dict[str, Any]
-    ) -> str:
+    def _substitute_variables_and_expressions(self, template: str, context: dict[str, Any]) -> str:
         """Substitute variables and evaluate expressions in <> brackets.
 
         Args:
@@ -370,9 +368,7 @@ class TemplateEvaluator:
 
         return str(value) if value is not None else ""
 
-    def _resolve_nested_variable_value(
-        self, var_expr: str, context: dict[str, Any]
-    ) -> Any:
+    def _resolve_nested_variable_value(self, var_expr: str, context: dict[str, Any]) -> Any:
         """Resolve nested variable access like 'image.width' and return the actual value.
 
         Args:
@@ -520,9 +516,7 @@ class TemplateEvaluator:
                         suggestion=f"Available: {', '.join(context.keys())}",
                     ) from e
             # String literal
-            elif (arg.startswith('"') and arg.endswith('"')) or (
-                arg.startswith("'") and arg.endswith("'")
-            ):
+            elif (arg.startswith('"') and arg.endswith('"')) or (arg.startswith("'") and arg.endswith("'")):
                 args.append(arg[1:-1])
             # Numeric literal
             elif arg.isdigit():

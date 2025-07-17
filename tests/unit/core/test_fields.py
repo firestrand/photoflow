@@ -35,11 +35,7 @@ class TestValidationError:
             message="Invalid value",
         )
 
-        expected_msg = (
-            "Validation failed for 'width': Invalid value\n"
-            "Expected: integer\n"
-            "Actual: hello"
-        )
+        expected_msg = "Validation failed for 'width': Invalid value\n" "Expected: integer\n" "Actual: hello"
         assert str(error) == expected_msg
 
     def test_error_with_suggestion(self) -> None:
@@ -365,3 +361,49 @@ class TestFieldDefaults:
         """Test optional field with default value."""
         field = IntegerField(default=50, required=False)
         assert field.validate(None) == 50
+
+
+class TestFieldMissingLineCoverage:
+    """Test specific missing lines for coverage."""
+
+    def test_float_field_none_value_line_220(self) -> None:
+        """Test FloatField validation with None value (line 220)."""
+        field = FloatField(required=False)
+        # This should trigger the early return on line 220
+        result = field.validate(None)
+        assert result is None
+
+    def test_boolean_field_none_value_line_273(self) -> None:
+        """Test BooleanField validation with None value (line 273)."""
+        field = BooleanField(required=False)
+        # This should trigger the early return on line 273
+        result = field.validate(None)
+        assert result is None
+
+    def test_boolean_field_conversion_error_lines_296_297(self) -> None:
+        """Test BooleanField conversion error (lines 296-297)."""
+        field = BooleanField()
+
+        # Create an object that cannot be converted to boolean
+        class UnconvertibleObject:
+            def __bool__(self):
+                raise ValueError("Cannot convert to bool")
+
+        with pytest.raises(ValidationError) as exc_info:
+            field.validate(UnconvertibleObject())
+
+        assert "Value cannot be converted to boolean" in str(exc_info.value)
+
+    def test_string_field_none_value_line_340(self) -> None:
+        """Test StringField validation with None value (line 340)."""
+        field = StringField(required=False)
+        # This should trigger the early return on line 340
+        result = field.validate(None)
+        assert result is None
+
+    def test_choice_field_none_value_line_395(self) -> None:
+        """Test ChoiceField validation with None value (line 395)."""
+        field = ChoiceField(choices=[("option1", "Option 1"), ("option2", "Option 2")], required=False)
+        # This should trigger the early return on line 395
+        result = field.validate(None)
+        assert result is None

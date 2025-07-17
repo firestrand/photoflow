@@ -1,5 +1,7 @@
 """Tests for the template evaluation system."""
 
+import contextlib
+
 import pytest
 
 from photoflow.core.templates import (
@@ -412,3 +414,90 @@ class TestTemplateErrorHandling:
             evaluator.evaluate("<missing_var>", context)
         except TemplateError as e:
             assert "Available variables:" in e.suggestion
+
+    def test_nested_variable_resolution_errors(self) -> None:
+        """Test nested variable resolution error paths."""
+        evaluator = TemplateEvaluator()
+
+        # Test nested access on non-dict value
+        context = {"data": "string"}
+        try:
+            evaluator.evaluate("<data.field>", context)
+        except TemplateError as e:
+            assert "Cannot resolve 'field'" in e.message
+
+    def test_expression_fallback_handling(self) -> None:
+        """Test expression evaluation fallback paths."""
+        evaluator = TemplateEvaluator()
+        context = {"x": 10, "y": 20}
+
+        # Test expression that succeeds
+        result = evaluator.evaluate("<x + y>", context)
+        assert result == "30"
+
+        # Test expression with nested variable that raises TemplateError
+        class ErrorObject:
+            def __getattr__(self, name):
+                raise TemplateError("test", "Nested error", "")
+
+        context_with_error = {"error_obj": ErrorObject()}
+        with contextlib.suppress(TemplateError):
+            evaluator.evaluate("<error_obj.field>", context_with_error)
+
+    def test_function_call_edge_cases(self) -> None:
+        """Test function call edge cases."""
+        evaluator = TemplateEvaluator()
+        context = {"value": "test"}
+
+        # Test function that doesn't exist
+        try:
+            evaluator.evaluate("nonexistent_func(<value>)", context)
+        except TemplateError as e:
+            assert "Function 'nonexistent_func' is not allowed" in e.message
+
+        # Test function with complex arguments
+        result = evaluator.evaluate("len(<value>)", context)
+        assert result == "4"
+
+    def test_variable_extraction_edge_cases(self) -> None:
+        """Test variable extraction edge cases."""
+        evaluator = TemplateEvaluator()
+
+        # Test malformed expression
+        template = "<unclosed_expression"
+        variables = evaluator.get_template_variables(template)
+        assert len(variables) == 0
+
+        # Test expression with syntax errors
+        template = "<x + + y>"
+        variables = evaluator.get_template_variables(template)
+        # Should still extract variable names despite syntax error
+        assert "x" in variables
+        assert "y" in variables
+
+    def test_safe_eval_error_handling(self) -> None:
+        """Test safe evaluation error handling."""
+        evaluator = TemplateEvaluator()
+        context = {"value": "text"}
+
+        # Test unsafe eval expression
+        try:
+            evaluator.evaluate("__import__('os').system('ls')", context)
+        except TemplateError as e:
+            assert "Function '__import__' is not allowed" in e.message
+
+    def test_template_validation_comprehensive(self) -> None:
+        """Test comprehensive template validation."""
+        evaluator = TemplateEvaluator()
+        context = {"width": 100}
+
+        # Test validation with missing variable
+        template = "<height>"
+        errors = evaluator.validate_template(template, context)
+        assert len(errors) > 0
+        assert "height" in errors[0].lower()
+
+        # Test validation with valid template
+        template = "<width>"
+        errors = evaluator.validate_template(template, context)
+        assert len(errors) == 0

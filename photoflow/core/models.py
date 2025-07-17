@@ -3,12 +3,37 @@
 from __future__ import annotations
 
 import re  # used in _validate_constraints
-from dataclasses import field, replace
+from dataclasses import field
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 
 from pydantic import BaseModel, Field, TypeAdapter, field_validator
 from pydantic.dataclasses import dataclass as pydantic_dataclass
+
+T = TypeVar("T")
+
+
+# Helper function for pydantic dataclass replacement
+def replace(obj: T, **kwargs: Any) -> T:
+    """Replace function for pydantic dataclasses."""
+    # Create a new instance with updated values
+    # For pydantic dataclasses, we can use the __replace__ method if available
+    if hasattr(obj, "__replace__"):
+        return cast("T", obj.__replace__(**kwargs))
+
+    # Fallback: create new instance using class constructor
+    # Get current values as dict
+    current_values = {}
+    if hasattr(obj, "__dataclass_fields__"):
+        for field_name in obj.__dataclass_fields__:
+            current_values[field_name] = getattr(obj, field_name)
+
+    # Update with new values
+    current_values.update(kwargs)
+
+    # Create new instance
+    return obj.__class__(**current_values)
+
 
 # Constants ---------------------------------------------------------------------
 
@@ -166,9 +191,7 @@ class ImageAsset:
             "dpi_vertical": self.dpi[1],
             # Processing context
             "color_profile": self.color_profile or "",
-            "original_filename": (
-                self.original_path.stem if self.original_path else self.path.stem
-            ),
+            "original_filename": (self.original_path.stem if self.original_path else self.path.stem),
         }
 
         # Add EXIF-derived variables
@@ -202,9 +225,7 @@ class ImageAsset:
         if self.processing_metadata:
             vars_dict.update(
                 {
-                    "processing_date": self.processing_metadata.get(
-                        "processed_date", ""
-                    ),
+                    "processing_date": self.processing_metadata.get("processed_date", ""),
                     "pipeline_name": self.processing_metadata.get("pipeline", ""),
                     "processing_version": self.processing_metadata.get("version", ""),
                 }
@@ -226,10 +247,7 @@ class ImageAsset:
         if focal_length:
             try:
                 # Handle fractional values
-                if (
-                    isinstance(focal_length, tuple)
-                    and len(focal_length) == 2  # noqa: PLR2004
-                ):
+                if isinstance(focal_length, tuple) and len(focal_length) == 2:  # noqa: PLR2004
                     return f"{focal_length[0] / focal_length[1]:.0f}mm"
                 else:
                     return f"{float(focal_length):.0f}mm"
@@ -316,15 +334,11 @@ class ActionParameter(BaseModel):
 
     name: str = Field(..., description="Parameter name")
     value: Any = Field(..., description="Parameter value")
-    param_type: str = Field(
-        ..., description="Parameter type (int, float, str, bool, etc.)"
-    )
+    param_type: str = Field(..., description="Parameter type (int, float, str, bool, etc.)")
     default: Any = Field(None, description="Default value")
     description: str = Field("", description="Human-readable parameter description")
     required: bool = Field(True, description="Whether parameter is required")
-    constraints: dict[str, Any] = Field(
-        default_factory=dict, description="Validation constraints"
-    )
+    constraints: dict[str, Any] = Field(default_factory=dict, description="Validation constraints")
 
     @field_validator("param_type")
     @classmethod
@@ -332,9 +346,7 @@ class ActionParameter(BaseModel):
         """Validate parameter type."""
         valid_types = {"int", "float", "str", "bool", "list", "dict", "path", "enum"}
         if v not in valid_types:
-            raise ValueError(
-                f"Invalid parameter type: {v}. Must be one of {valid_types}"
-            )
+            raise ValueError(f"Invalid parameter type: {v}. Must be one of {valid_types}")
         return v
 
     def validate_value(self) -> ActionParameter:
@@ -355,13 +367,9 @@ class ActionParameter(BaseModel):
                 try:
                     self.value = int(self.value)
                 except (ValueError, TypeError) as e:
-                    raise ValueError(
-                        f"Parameter '{self.name}' must be an integer"
-                    ) from e
+                    raise ValueError(f"Parameter '{self.name}' must be an integer") from e
 
-            elif self.param_type == "float" and not isinstance(
-                self.value, (int, float)
-            ):
+            elif self.param_type == "float" and not isinstance(self.value, (int, float)):
                 try:
                     self.value = float(self.value)
                 except (ValueError, TypeError) as e:
@@ -388,22 +396,13 @@ class ActionParameter(BaseModel):
     def _validate_constraints(self) -> None:
         """Validate value against constraints."""
         if "min" in self.constraints and self.value < self.constraints["min"]:
-            raise ValueError(
-                f"Parameter '{self.name}' must be >= {self.constraints['min']}"
-            )
+            raise ValueError(f"Parameter '{self.name}' must be >= {self.constraints['min']}")
 
         if "max" in self.constraints and self.value > self.constraints["max"]:
-            raise ValueError(
-                f"Parameter '{self.name}' must be <= {self.constraints['max']}"
-            )
+            raise ValueError(f"Parameter '{self.name}' must be <= {self.constraints['max']}")
 
-        if (
-            "choices" in self.constraints
-            and self.value not in self.constraints["choices"]
-        ):
-            raise ValueError(
-                f"Parameter '{self.name}' must be one of {self.constraints['choices']}"
-            )
+        if "choices" in self.constraints and self.value not in self.constraints["choices"]:
+            raise ValueError(f"Parameter '{self.name}' must be one of {self.constraints['choices']}")
 
         if (
             "pattern" in self.constraints

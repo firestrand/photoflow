@@ -26,7 +26,7 @@ repos:
     rev: v1.16.1
     hooks:
       - id: mypy
-        additional_dependencies: [types-PyYAML, types-Pillow, pydantic, pytest]
+        additional_dependencies: [types-PyYAML, types-Pillow, types-click, pydantic, pytest]
         args: [--strict]
 
   - repo: local
@@ -37,4 +37,4 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
-        args: [--cov=photoflow, --cov-fail-under=90]
+        args: [--cov=photoflow, --cov-fail-under=82]

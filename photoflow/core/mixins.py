@@ -263,9 +263,7 @@ class ColorMixin:
     # Modes suitable for web use
     WEB_MODES: ClassVar[set[str]] = {"RGB", "RGBA", "L"}
 
-    def validate_color_mode(
-        self, mode: str, supported_modes: list[str] | None = None
-    ) -> str:
+    def validate_color_mode(self, mode: str, supported_modes: list[str] | None = None) -> str:
         """Validate that color mode is supported.
 
         Args:
@@ -566,9 +564,7 @@ class ProcessingMixin:
 
         return float_value
 
-    def clamp_value(
-        self, value: int | float, min_val: int | float, max_val: int | float
-    ) -> int | float:
+    def clamp_value(self, value: int | float, min_val: int | float, max_val: int | float) -> int | float:
         """Clamp value to specified range.
 
         Args:

@@ -1,7 +1,5 @@
 """Test settings management."""
 
-# ruff: noqa: PLR2004
-
 import os
 import tempfile
 from pathlib import Path
@@ -35,13 +33,11 @@ class TestPhotoFlowSettings:
     def test_validation_constraints(self) -> None:
         """Test settings validation constraints."""
         with pytest.raises(ValueError):
-            PhotoFlowSettings(max_workers=0)  # Below minimum
-
+            PhotoFlowSettings(max_workers=0)
         with pytest.raises(ValueError):
-            PhotoFlowSettings(log_level="INVALID")  # Invalid log level
-
+            PhotoFlowSettings(log_level="INVALID")
         with pytest.raises(ValueError):
-            PhotoFlowSettings(default_quality=101)  # Above maximum
+            PhotoFlowSettings(default_quality=101)
 
     def test_env_prefix(self) -> None:
         """Test environment variable prefix handling via loader."""
@@ -60,14 +56,11 @@ class TestFileSettingsLoader:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             yaml.dump({"max_workers": 8, "log_level": "DEBUG"}, f)
             f.flush()
-
             loader = FileSettingsLoader(config_paths=[Path(f.name)])
             settings = loader.load()
-
             assert settings["max_workers"] == 8
             assert settings["log_level"] == "DEBUG"
-
-        Path(f.name).unlink()  # Clean up
+        Path(f.name).unlink()
 
     def test_load_with_missing_file(self) -> None:
         """Test loading when config file doesn't exist."""
@@ -80,12 +73,10 @@ class TestFileSettingsLoader:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             yaml.dump({"max_workers": 4}, f)
             f.flush()
-
             with patch.dict(os.environ, {"PHOTOFLOW_MAX_WORKERS": "8"}):
                 loader = FileSettingsLoader(config_paths=[Path(f.name)])
                 settings = loader.load()
                 assert settings["max_workers"] == 8
-
         Path(f.name).unlink()
 
     def test_env_value_conversion(self) -> None:
@@ -101,7 +92,6 @@ class TestFileSettingsLoader:
         ):
             loader = FileSettingsLoader()
             settings = loader.load()
-
             assert settings["enable_parallel"] is True
             assert settings["max_workers"] == 16
             assert settings["memory_limit_mb"] == 2048
@@ -110,7 +100,6 @@ class TestFileSettingsLoader:
     def test_get_specific_setting(self) -> None:
         """Test getting specific setting with default."""
         loader = FileSettingsLoader(config_paths=[])
-
         with patch.dict(os.environ, {"PHOTOFLOW_MAX_WORKERS": "8"}):
             assert loader.get("max_workers") == 8
             assert loader.get("nonexistent", "default") == "default"
@@ -118,16 +107,11 @@ class TestFileSettingsLoader:
     def test_cache_invalidation(self) -> None:
         """Test settings cache invalidation."""
         loader = FileSettingsLoader(config_paths=[])
-
         with patch.dict(os.environ, {"PHOTOFLOW_MAX_WORKERS": "4"}):
             settings1 = loader.load()
-
         with patch.dict(os.environ, {"PHOTOFLOW_MAX_WORKERS": "8"}):
-            # Should return cached value
             settings2 = loader.load()
             assert settings1["max_workers"] == settings2["max_workers"]
-
-            # After cache invalidation, should reload
             loader.invalidate_cache()
             settings3 = loader.load()
             assert settings3["max_workers"] == 8
@@ -146,17 +130,15 @@ class TestSettingsContainer:
     def test_loader_override(self) -> None:
         """Test overriding settings loader."""
 
-        # Mock loader that returns specific settings
         class MockLoader:
             def load(self) -> dict[str, Any]:
-                return {"max_workers": 16}  # Within validation range
+                return {"max_workers": 16}
 
             def get(self, key: str, default: Any = None) -> Any:
                 return self.load().get(key, default)
 
         container = SettingsContainer()
         container.override_loader(MockLoader())
-
         settings = container.settings
         assert settings.max_workers == 16
 
@@ -164,11 +146,8 @@ class TestSettingsContainer:
         """Test reloading settings."""
         container = SettingsContainer()
         settings1 = container.settings
-
         container.reload()
         settings2 = container.settings
-
-        # Should get new instance after reload
         assert settings1 is not settings2
 
 
@@ -185,8 +164,6 @@ class TestGlobalSettingsFunctions:
         settings1 = get_settings()
         reload_settings()
         settings2 = get_settings()
-
-        # Should get new instance after reload
         assert settings1 is not settings2
 
     def test_override_settings_loader(self) -> None:
@@ -194,7 +171,7 @@ class TestGlobalSettingsFunctions:
 
         class MockLoader:
             def load(self) -> dict[str, Any]:
-                return {"max_workers": 24}  # Within validation range
+                return {"max_workers": 24}
 
             def get(self, key: str, default: Any = None) -> Any:
                 return self.load().get(key, default)
@@ -202,3 +179,51 @@ class TestGlobalSettingsFunctions:
         override_settings_loader(MockLoader())
         settings = get_settings()
         assert settings.max_workers == 24
+
+
+class TestSettingsMissingLineCoverage:
+    """Test specific missing lines for coverage."""
+
+    def test_load_file_yaml_error_lines_113_116(self) -> None:
+        """Test YAML error handling in _load_file (lines 113-116)."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            f.write("invalid: yaml: content: [unclosed")
+            f.flush()
+            file_path = Path(f.name)
+        try:
+            loader = FileSettingsLoader(config_paths=[file_path])
+            with patch("builtins.print") as mock_print:
+                result = loader._load_file(file_path)
+                assert result == {}
+                mock_print.assert_called_once()
+                assert "Warning: Could not load config" in mock_print.call_args[0][0]
+        finally:
+            file_path.unlink(missing_ok=True)
+
+    def test_load_file_os_error_lines_113_116(self) -> None:
+        """Test OS error handling in _load_file (lines 113-116)."""
+        loader = FileSettingsLoader()
+        with (
+            patch("builtins.print") as mock_print,
+            patch("pathlib.Path.open", side_effect=OSError("Permission denied")),
+        ):
+            result = loader._load_file(Path("/fake/path.yaml"))
+            assert result == {}
+            mock_print.assert_called_once()
+            assert "Warning: Could not load config" in mock_print.call_args[0][0]
+
+    def test_convert_env_value_false_line_137(self) -> None:
+        """Test environment value conversion for false values (line 137)."""
+        loader = FileSettingsLoader()
+        false_values = ["false", "no", "0", "off", "FALSE", "NO", "OFF"]
+        for value in false_values:
+            result = loader._convert_env_value(value)
+            assert result is False, f"Expected False for '{value}', got {result}"
+
+    def test_convert_env_value_no_comma_line_152(self) -> None:
+        """Test environment value conversion when no comma present (line 152)."""
+        loader = FileSettingsLoader()
+        test_values = ["single_value", "some_string", "/path/to/file"]
+        for value in test_values:
+            result = loader._convert_env_value(value)
+            assert result == value, f"Expected '{value}', got {result}"

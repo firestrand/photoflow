@@ -208,3 +208,7 @@ __marimo__/
 
 # Development documentation
 dev-doc/
+.DS_Store
+
+# Local utility scripts for development
+utility_scripts/
