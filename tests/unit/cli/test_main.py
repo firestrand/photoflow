@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from click.testing import CliRunner
+from PIL import Image
 
 from photoflow.cli.main import _parse_action_string, cli, main
 from photoflow.core.models import ActionSpec, ImageAsset, Pipeline
@@ -675,3 +676,107 @@ class TestCLIMainCoverageExtensions:
         runner = CliRunner()
         result = runner.invoke(cli, ["batch", "/totally/invalid/path", "--action", "resize:width=100"])
         assert result.exit_code != 0 or "does not exist" in result.output
+
+
+class TestDuplicatesCommand:
+    """Tests for the duplicate detection CLI command."""
+
+    def _make_image(self, path: Path, color: tuple[int, int, int] = (255, 0, 0)) -> Path:
+        image = Image.new("RGB", (16, 16), color=color)
+        image.save(path)
+        return path
+
+    def test_duplicates_no_files(self, tmp_path: Path) -> None:
+        """Command should warn when no images are found."""
+        empty_dir = tmp_path / "images"
+        empty_dir.mkdir()
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["duplicates", str(empty_dir)])
+
+        assert result.exit_code == 0
+        assert "No image files found" in result.output
+
+    @patch("photoflow.cli.main.DuplicateDetector.find_duplicates")
+    def test_duplicates_no_matches(self, mock_find_duplicates, tmp_path: Path) -> None:
+        """Gracefully handle the no-duplicates scenario."""
+        img_dir = tmp_path / "images"
+        img_dir.mkdir()
+        self._make_image(img_dir / "a.jpg")
+
+        mock_find_duplicates.return_value = []
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["duplicates", str(img_dir)])
+
+        assert result.exit_code == 0
+        assert "No duplicates found" in result.output
+
+    @patch("photoflow.cli.main.DuplicateDetector.find_duplicates")
+    def test_duplicates_table_output(self, mock_find_duplicates, tmp_path: Path) -> None:
+        """Render duplicate results in table mode with verbose progress."""
+        img_dir = tmp_path / "images"
+        img_dir.mkdir()
+        first = self._make_image(img_dir / "one.jpg")
+        second = self._make_image(img_dir / "two.jpg")
+        mock_find_duplicates.return_value = [[first, second]]
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["--verbose", "duplicates", str(img_dir), "--threshold", "3", "--output-format", "table"],
+        )
+
+        assert result.exit_code == 0
+        assert "Found 1 duplicate groups" in result.output
+
+    @patch("photoflow.cli.main.json.dumps")
+    @patch("photoflow.cli.main.DuplicateDetector.find_duplicates")
+    def test_duplicates_json_output(self, mock_find_duplicates, mock_json_dumps, tmp_path: Path) -> None:
+        """Support JSON formatting for downstream tooling."""
+        img_dir = tmp_path / "images"
+        img_dir.mkdir()
+        first = self._make_image(img_dir / "one.jpg")
+        second = self._make_image(img_dir / "two.jpg")
+        mock_find_duplicates.return_value = [[first, second]]
+        mock_json_dumps.return_value = "JSON_PAYLOAD"
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["duplicates", str(img_dir), "--output-format", "json"])
+
+        assert result.exit_code == 0
+        assert "JSON_PAYLOAD" in result.output
+        mock_json_dumps.assert_called_once()
+        payload = mock_json_dumps.call_args.args[0]
+        assert payload == [[str(first), str(second)]]
+
+    @patch("photoflow.cli.main.DuplicateDetector.find_duplicates")
+    def test_duplicates_paths_output(self, mock_find_duplicates, tmp_path: Path) -> None:
+        """Ensure simple path output is generated correctly."""
+        img_dir = tmp_path / "images"
+        img_dir.mkdir()
+        first = self._make_image(img_dir / "one.jpg")
+        second = self._make_image(img_dir / "two.jpg")
+        mock_find_duplicates.return_value = [[first, second]]
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["duplicates", str(img_dir), "--output-format", "paths"])
+
+        assert result.exit_code == 0
+        normalized = result.output.replace("\n", "")
+        assert str(first) in normalized
+        assert str(second) in normalized
+
+    @patch("photoflow.cli.main.DuplicateDetector.find_duplicates")
+    def test_duplicates_error_handling(self, mock_find_duplicates, tmp_path: Path) -> None:
+        """Report errors from the detector without crashing."""
+        img_dir = tmp_path / "images"
+        img_dir.mkdir()
+        self._make_image(img_dir / "one.jpg")
+        mock_find_duplicates.side_effect = RuntimeError("unexpected issue")
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["duplicates", str(img_dir)])
+
+        assert result.exit_code == 0
+        assert "Error during duplicate detection" in result.output

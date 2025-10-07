@@ -21,6 +21,7 @@ from photoflow.core.metadata import (
     read_metadata,
     write_metadata,
 )
+from tests.utils.test_image_generator import TestImageGenerator
 
 
 class TestMetadataExceptions:
@@ -892,3 +893,110 @@ class TestMetadataSpecificMissingLines:
                 assert abs(result - expected) < 0.001
             else:
                 assert result == expected
+
+    def test_helper_string_value_decoding(self):
+        """_get_string_value should decode byte strings when reader is present."""
+        reader = MetadataReader()
+        reader.exif_reader = Mock()
+        ifd = {1: b"Canon\x00"}
+        tags = {1: {"name": "Make"}}
+        result = reader._get_string_value(ifd, tags, "Make")
+        assert result == "Canon"
+
+    def test_helper_int_value(self):
+        """_get_int_value should extract integers for matching tags."""
+        reader = MetadataReader()
+        reader.exif_reader = Mock()
+        ifd = {2: 42}
+        tags = {2: {"name": "Orientation"}}
+        assert reader._get_int_value(ifd, tags, "Orientation") == 42
+
+    def test_helper_rational_value(self):
+        """_get_rational_value defers to the exif reader for formatting."""
+        reader = MetadataReader()
+        mock_reader = Mock()
+        mock_reader._rational_to_string.return_value = "1/200"
+        reader.exif_reader = mock_reader
+        ifd = {3: (1, 200)}
+        tags = {3: {"name": "ExposureTime"}}
+        assert reader._get_rational_value(ifd, tags, "ExposureTime") == "1/200"
+
+    def test_helper_datetime_value_bytes(self):
+        """_get_datetime_value handles bytes by decoding them."""
+        reader = MetadataReader()
+        reader.exif_reader = Mock()
+        ifd = {4: b"2024:01:01 12:00:00"}
+        tags = {4: {"name": "DateTimeOriginal"}}
+        assert reader._get_datetime_value(ifd, tags, "DateTimeOriginal") == "2024:01:01 12:00:00"
+
+    def test_helper_shutter_speed(self):
+        """_get_shutter_speed converts rational exposure values."""
+        reader = MetadataReader()
+        mock_reader = Mock()
+        mock_reader._rational_to_string.return_value = "1/125"
+        reader.exif_reader = mock_reader
+        ifd = {33434: (1, 125)}
+        assert reader._get_shutter_speed(ifd, {}) == "1/125"
+
+    def test_helper_color_space(self):
+        """_get_color_space proxies to the reader parser."""
+        reader = MetadataReader()
+        mock_reader = Mock()
+        mock_reader._parse_color_space.return_value = "Adobe RGB"
+        reader.exif_reader = mock_reader
+        ifd = {40961: 2}
+        assert reader._get_color_space(ifd, {}) == "Adobe RGB"
+
+    def test_helper_gps_parsing(self):
+        """GPS helpers should convert coordinates and altitude correctly."""
+        reader = MetadataReader()
+        mock_reader = Mock()
+        mock_reader._convert_gps_coordinate.side_effect = [12.34, 56.78]
+        reader.exif_reader = mock_reader
+        gps_dict = {
+            1: "N",
+            2: [(12, 1), (20, 1), (24, 1)],
+            3: "E",
+            4: [(56, 1), (46, 1), (40, 1)],
+            5: 0,
+            6: (150, 1),
+            7: [(10, 1), (20, 1), (30, 1)],
+            29: b"2024:01:01",
+        }
+        lat, lng = reader._parse_gps_coordinates(gps_dict)
+        assert lat == 12.34 and lng == 56.78
+        assert reader._get_gps_altitude(gps_dict) == 150.0
+        assert reader._get_gps_timestamp(gps_dict) == "2024:01:01 10:20:30"
+
+
+@pytest.mark.skipif(
+    not (PIL_AVAILABLE and PIEXIF_AVAILABLE and IPTCINFO_AVAILABLE),
+    reason="Requires Pillow, piexif, and iptcinfo3",
+)
+class TestMetadataIntegration:
+    """Integration tests exercising actual metadata read/write flows."""
+
+    def test_read_metadata_real_image(self, tmp_path: Path) -> None:
+        """Reading from a generated image should hydrate key EXIF fields."""
+        generator = TestImageGenerator()
+        image_path = generator.create_test_image(output_path=tmp_path / "sample.jpg", photographer="Jane Doe")
+
+        exif_data, iptc_data = read_metadata(image_path)
+
+        assert exif_data.make == "Canon"
+        assert exif_data.model == "EOS R5"
+        # Width/height may be unavailable for some formats depending on loader
+        # IPTC metadata is populated in a later write step
+        assert iptc_data.title is None
+
+    def test_write_metadata_round_trip(self, tmp_path: Path) -> None:
+        """Round-tripping metadata writes updates EXIF/IPTC fields on disk."""
+        generator = TestImageGenerator()
+        source_path = generator.create_test_image(output_path=tmp_path / "source.jpg", photographer="Jane Doe")
+        output_path = tmp_path / "output.jpg"
+
+        exif_data, iptc_data = read_metadata(source_path)
+        exif_data.creator = "Integration Tester"
+        write_metadata(source_path, exif_data, None, output_path)
+
+        assert output_path.exists()

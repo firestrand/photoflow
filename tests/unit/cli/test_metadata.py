@@ -1,6 +1,7 @@
 """Working tests for CLI metadata commands."""
 
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock, call, patch
 
@@ -147,6 +148,22 @@ class TestInspectCommand:
         finally:
             Path(tmp_path).unlink(missing_ok=True)
 
+    @patch("photoflow.cli.metadata.read_metadata")
+    def test_inspect_unexpected_error(self, mock_read_metadata):
+        """Ensure unexpected exceptions surface through click abort."""
+        mock_read_metadata.side_effect = RuntimeError("boom")
+
+        runner = CliRunner()
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+            tmp_path = tmp.name
+
+        try:
+            result = runner.invoke(inspect, [tmp_path])
+            assert result.exit_code != 0
+            assert "Unexpected error" in result.output
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
+
 
 class TestWriteCommand:
     """Test metadata write command."""
@@ -212,6 +229,22 @@ class TestWriteCommand:
         finally:
             Path(tmp_path).unlink(missing_ok=True)
 
+    @patch("photoflow.cli.metadata.read_metadata")
+    def test_write_unexpected_error(self, mock_read_metadata):
+        """Unexpected errors should trigger abort."""
+        mock_read_metadata.side_effect = RuntimeError("boom")
+
+        runner = CliRunner()
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+            tmp_path = tmp.name
+
+        try:
+            result = runner.invoke(write, [tmp_path, "--title", "Test"])
+            assert result.exit_code != 0
+            assert "Unexpected error" in result.output
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
+
 
 class TestCopyCommand:
     """Test metadata copy command."""
@@ -233,6 +266,29 @@ class TestCopyCommand:
         finally:
             Path(source_path).unlink(missing_ok=True)
             Path(target_path).unlink(missing_ok=True)
+
+    @patch("photoflow.cli.metadata.write_metadata")
+    @patch("photoflow.cli.metadata.read_metadata")
+    def test_copy_unexpected_error(self, mock_read_metadata, mock_write_metadata):
+        """Unexpected write failures should abort the command."""
+        exif_data = ExifData(make="Canon")
+        iptc_data = IPTCData(title="Test")
+        mock_read_metadata.return_value = (exif_data, iptc_data)
+        mock_write_metadata.side_effect = RuntimeError("fail")
+
+        runner = CliRunner()
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as src:
+            src_path = src.name
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as dst:
+            dst_path = dst.name
+
+        try:
+            result = runner.invoke(copy, [src_path, dst_path])
+            assert result.exit_code != 0
+            assert "Unexpected error" in result.output
+        finally:
+            Path(src_path).unlink(missing_ok=True)
+            Path(dst_path).unlink(missing_ok=True)
 
 
 class TestDisplayMetadataTableFunction:
@@ -268,6 +324,65 @@ class TestDisplayMetadataTableFunction:
         _display_metadata_table(Path("test.jpg"), exif_data, iptc_data, False, True)
 
         assert mock_console.print.called
+
+    @patch("photoflow.cli.metadata.console")
+    def test_display_metadata_table_rich_content(self, mock_console):
+        """Render both EXIF and IPTC tables with comprehensive content."""
+        exif_data = ExifData(
+            make="Canon",
+            model="EOS R5",
+            lens_make="Canon",
+            lens_model="RF 24-70mm",
+            focal_length="50mm",
+            f_number="f/2.8",
+            exposure_time="1/125",
+            iso_speed=100,
+            width=6000,
+            height=4000,
+            color_space="AdobeRGB",
+            datetime_original=datetime(2024, 1, 1, 12, 0, 0),
+            datetime_digitized="2024-01-01 12:00:00",
+            gps_latitude=12.345678,
+            gps_longitude=98.765432,
+            gps_altitude=42.0,
+            software="PhotoFlow",
+            creator="Jane Doe",
+            copyright="© 2024 Jane Doe",
+        )
+        iptc_data = IPTCData(
+            title="Sunset",
+            description="Sunset over mountains",
+            keywords=["sunset", "mountains"],
+            category="Nature",
+            byline="Jane Doe",
+            byline_title="Photographer",
+            credit="Example Studio",
+            source="PhotoFlow",
+            copyright_notice="© 2024 Jane Doe",
+            location="Ridge",
+            city="Aspen",
+            state="CO",
+            country="USA",
+            date_created=datetime(2024, 1, 1),
+            urgency=3,
+            instructions="Do not crop",
+        )
+
+        _display_metadata_table(Path("rich.jpg"), exif_data, iptc_data, False, False)
+
+        # First call prints the panel header, later calls output tables/columns
+        assert mock_console.print.call_count >= 2
+
+    @patch("photoflow.cli.metadata.console")
+    def test_display_metadata_table_no_metadata(self, mock_console):
+        """Validate graceful handling when metadata payload is empty."""
+        iptc = IPTCData()
+        iptc.keywords = None  # type: ignore[assignment]
+        iptc.supplemental_categories = None  # type: ignore[assignment]
+        iptc.raw_iptc = None  # type: ignore[assignment]
+        _display_metadata_table(Path("empty.jpg"), ExifData(), iptc, False, False)
+        printed = [args[0] for args, _ in mock_console.print.call_args_list]
+        assert "[yellow]No metadata found in image[/yellow]" in printed
 
 
 class TestCLIMetadataIntegration:
