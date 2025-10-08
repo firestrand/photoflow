@@ -79,7 +79,7 @@ class ImageProcessor:
 
             # Handle DPI
             dpi = pil_image.info.get("dpi", (72, 72))
-            if isinstance(dpi, (int, float)):
+            if isinstance(dpi, int | float):
                 dpi = (dpi, dpi)
 
             # Create new asset

@@ -313,7 +313,7 @@ class ColorMixin:
 
         if color_mode in {"L", "1"}:
             # Grayscale modes expect single value
-            if isinstance(color, (tuple, list)):
+            if isinstance(color, tuple | list):
                 if len(color) == 1:
                     color = color[0]
                 else:
@@ -325,7 +325,7 @@ class ColorMixin:
                         suggestion="Use a single number like 128 or (128,)",
                     )
 
-            if not isinstance(color, (int, float)):
+            if not isinstance(color, int | float):
                 raise ValidationError(
                     field_name="color",
                     expected="numeric color value",
@@ -348,7 +348,7 @@ class ColorMixin:
 
         else:
             # Multi-channel modes expect tuple
-            if not isinstance(color, (tuple, list)):
+            if not isinstance(color, tuple | list):
                 raise ValidationError(
                     field_name="color",
                     expected=f"color tuple for {color_mode} mode",
@@ -377,7 +377,7 @@ class ColorMixin:
             # Validate each component
             validated_components = []
             for i, component in enumerate(color):
-                if not isinstance(component, (int, float)):
+                if not isinstance(component, int | float):
                     raise ValidationError(
                         field_name=f"color_component_{i}",
                         expected="numeric value",

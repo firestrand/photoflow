@@ -4,8 +4,10 @@ This module provides functions to load images from files and convert them
 to ImageAsset objects with proper metadata extraction.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 
 from .models import ImageAsset
 
@@ -32,6 +34,7 @@ try:
 
     PIL_AVAILABLE = True
 except ImportError:
+    Image = None  # type: ignore[assignment]
     PIL_AVAILABLE = False
 
 
@@ -41,7 +44,7 @@ class ImageLoadError(Exception):
     pass
 
 
-def load_image_asset(image_path: Union[Path, str]) -> ImageAsset:
+def load_image_asset(image_path: Path | str) -> ImageAsset:
     """Load an image file and create an ImageAsset with extracted metadata.
 
     Args:
@@ -71,7 +74,7 @@ def load_image_asset(image_path: Union[Path, str]) -> ImageAsset:
                 exif_data = _extract_pil_info(pil_image.info)
             iptc_data = _extract_iptc_data(image_path)
             dpi = getattr(pil_image, "info", {}).get("dpi", (72, 72))
-            if isinstance(dpi, (int, float)):
+            if isinstance(dpi, int | float):
                 dpi = int(dpi), int(dpi)
     except Exception as e:
         raise ImageLoadError(f"Failed to load image {image_path}: {e}") from e
@@ -87,9 +90,7 @@ def load_image_asset(image_path: Union[Path, str]) -> ImageAsset:
     )
 
 
-def create_image_asset_from_pil(
-    pil_image: "Image.Image", path: Union[Path, str], format_name: Union[str, None] = None
-) -> ImageAsset:
+def create_image_asset_from_pil(pil_image: Image.Image, path: Path | str, format_name: str | None = None) -> ImageAsset:
     """Create an ImageAsset from a PIL Image object.
 
     Args:
@@ -113,7 +114,7 @@ def create_image_asset_from_pil(
     if hasattr(pil_image, "info") and pil_image.info:
         exif_data = _extract_pil_info(pil_image.info)
     dpi = getattr(pil_image, "info", {}).get("dpi", (72, 72))
-    if isinstance(dpi, (int, float)):
+    if isinstance(dpi, int | float):
         dpi = int(dpi), int(dpi)
     return ImageAsset(
         path=path,
@@ -173,7 +174,7 @@ def _clean_exif_value(value: Any) -> Any:
         return value
 
 
-def _extract_pil_info(info_dict: Union[dict[str, Any], None]) -> dict[str, Any]:
+def _extract_pil_info(info_dict: dict[str | tuple[int, int], Any] | None) -> dict[str, Any]:
     """Extract metadata from PIL image info dictionary.
 
     Args:
@@ -229,12 +230,15 @@ def _extract_iptc_data(image_path: Path) -> dict[str, Any]:
         return {}
     try:
         info = IPTCInfo(str(image_path))
-        return info.data if hasattr(info, "data") else {}
     except Exception:
         return {}
+    data = getattr(info, "data", None)
+    if isinstance(data, dict):
+        return dict(data)
+    return {}
 
 
-def load_test_image(image_path: Union[Path, str]) -> ImageAsset:
+def load_test_image(image_path: Path | str) -> ImageAsset:
     """Load a test image - alias for load_image_asset.
 
     Args:

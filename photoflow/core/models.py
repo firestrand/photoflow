@@ -369,7 +369,7 @@ class ActionParameter(BaseModel):
                 except (ValueError, TypeError) as e:
                     raise ValueError(f"Parameter '{self.name}' must be an integer") from e
 
-            elif self.param_type == "float" and not isinstance(self.value, (int, float)):
+            elif self.param_type == "float" and not isinstance(self.value, int | float):
                 try:
                     self.value = float(self.value)
                 except (ValueError, TypeError) as e:

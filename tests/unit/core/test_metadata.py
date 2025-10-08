@@ -995,7 +995,7 @@ class TestMetadataIntegration:
         source_path = generator.create_test_image(output_path=tmp_path / "source.jpg", photographer="Jane Doe")
         output_path = tmp_path / "output.jpg"
 
-        exif_data, iptc_data = read_metadata(source_path)
+        exif_data, _iptc_data = read_metadata(source_path)
         exif_data.creator = "Integration Tester"
         write_metadata(source_path, exif_data, None, output_path)
 

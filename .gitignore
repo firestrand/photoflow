@@ -212,3 +212,5 @@ dev-doc/
 
 # Local utility scripts for development
 utility_scripts/
+# Ignore generated example outputs
+examples/output/

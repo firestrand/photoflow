@@ -1,7 +1,7 @@
 """Tests for the BaseAction system."""
 
 from pathlib import Path
-from typing import Any, ClassVar, Union
+from typing import Any, ClassVar
 from unittest.mock import Mock, patch
 
 import pytest
@@ -93,7 +93,7 @@ class ResizeTestAction(BaseAction):
             fields.append("height")
         return fields
 
-    def apply(self, image: ImageAsset, **params: Union[int, bool]) -> ImageAsset:
+    def apply(self, image: ImageAsset, **params: int | bool) -> ImageAsset:
         """Apply resize operation."""
         width = params["width"]
         height = params.get("height", image.height)
@@ -698,9 +698,9 @@ class TestCoreMixinsErrorPaths:
         mixin = ProcessingMixin()
         with pytest.raises(ValidationError, match="Factor must be a number"):
             mixin.validate_factor("invalid")
-        with pytest.raises(ValidationError, match="Factor must be at least 0.5"):
+        with pytest.raises(ValidationError, match=r"Factor must be at least 0\.5"):
             mixin.validate_factor(0.2, min_factor=0.5)
-        with pytest.raises(ValidationError, match="Factor must be at most 2.0"):
+        with pytest.raises(ValidationError, match=r"Factor must be at most 2\.0"):
             mixin.validate_factor(3.0, max_factor=2.0)
 
 

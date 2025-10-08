@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 import click
 import yaml
@@ -88,7 +88,7 @@ def inspect(image_path: str, format: str, exif_only: bool, iptc_only: bool) -> N
 @click.option("--country", help="Set country")
 @click.option("--credit", help="Set credit line")
 @click.option("--source", help="Set source")
-def write(image_path: str, output: Optional[str], **kwargs: Any) -> None:
+def write(image_path: str, output: str | None, **kwargs: Any) -> None:
     """Write metadata to an image file."""
     try:
         image_path_obj = Path(image_path)
@@ -140,7 +140,7 @@ def write(image_path: str, output: Optional[str], **kwargs: Any) -> None:
 @click.option("--exif", is_flag=True, help="Remove EXIF data")
 @click.option("--iptc", is_flag=True, help="Remove IPTC data")
 @click.option("--all", "remove_all", is_flag=True, help="Remove all metadata")
-def remove(image_path: str, output: Optional[str], exif: bool, iptc: bool, remove_all: bool) -> None:
+def remove(image_path: str, output: str | None, exif: bool, iptc: bool, remove_all: bool) -> None:
     """Remove metadata from an image file."""
     if not (exif or iptc or remove_all):
         console.print("[yellow]No metadata types specified. Use --exif, --iptc, or --all[/yellow]")
@@ -152,7 +152,7 @@ def remove(image_path: str, output: Optional[str], exif: bool, iptc: bool, remov
             clean_img = Image.new(img.mode, img.size)
             clean_img.putdata(list(img.getdata()))
             if hasattr(img, "info"):
-                clean_info: dict[Union[str, tuple[int, int]], Any] = {}
+                clean_info: dict[str | tuple[int, int], Any] = {}
                 if not remove_all:
                     for key in ["dpi", "format"]:
                         if key in img.info:
@@ -182,7 +182,7 @@ def remove(image_path: str, output: Optional[str], exif: bool, iptc: bool, remov
 def copy(
     source_path: str,
     target_path: str,
-    output: Optional[str],
+    output: str | None,
     exif_only: bool,
     iptc_only: bool,
 ) -> None:

@@ -3,7 +3,7 @@
 import csv
 import json
 from pathlib import Path
-from typing import Any, ClassVar, Union
+from typing import Any, ClassVar
 
 import yaml
 from PIL import Image as PILImage
@@ -144,7 +144,7 @@ class RemoveMetadataAction(BaseAction):
                     clean_img = PILImage.new(pil_img.mode, pil_img.size)
                     clean_img.putdata(list(pil_img.getdata()))
                     if preserve_basic and hasattr(pil_img, "info"):
-                        clean_info: dict[Union[str, tuple[int, int]], Any] = {}
+                        clean_info: dict[str | tuple[int, int], Any] = {}
                         for key in ["dpi", "format"]:
                             if key in pil_img.info:
                                 clean_info[key] = pil_img.info[key]
